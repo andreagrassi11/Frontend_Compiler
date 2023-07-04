@@ -1,7 +1,7 @@
 #include <iostream>
 
 extern "C" {
-    double simple(double, double);
+    double g(double, double);
 }
 
 int main() {
@@ -10,5 +10,5 @@ int main() {
     std::cin >> x;
     std::cout << "y: ";
     std::cin >> y;
-    std::cout << "Il valore di simple(x,y) è " << simple(x,y) << std::endl;
+    std::cout << "Il valore di g(x,y) è " << g(x,y) << std::endl;
 }

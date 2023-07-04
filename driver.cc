@@ -1,9 +1,20 @@
 #include "driver.hh"
 #include "parser.hh"
+#include "llvm/Support/raw_os_ostream.h"
+#include <typeinfo>
 
 Value *LogErrorV(const std::string Str) {
   std::cerr << Str << std::endl;
   return nullptr;
+}
+
+// ESTENSIONE 4 -> Funzione per gestire le allocazioni che crea un blocco apposito per esse
+// CreateEntryBlockAlloca - Crea un'istruzione alloca nel blocco di ingresso della funzione. Questo è usato per variabili mutabili ecc.
+static AllocaInst *CreateEntryBlockAlloca(driver &drv, Function *TheFunction, const std::string &VarName, Value *arraySize = nullptr) {
+  IRBuilder<> TmpB(&TheFunction->getEntryBlock(), // Genero un builder temporaneo
+                TheFunction->getEntryBlock().begin());
+  return TmpB.CreateAlloca(Type::getDoubleTy(*drv.context), arraySize, // Creo l'istruzzione alloca
+                           VarName);
 }
 
 /*************************** Driver class *************************/
@@ -67,7 +78,7 @@ void SeqAST:: visit() {
       return;
     };
   };
-  std::cout << ";";
+  std::cout << ";" << "\n\n";
   continuation->visit();
 };
 
@@ -119,10 +130,10 @@ BinaryExprAST::BinaryExprAST(char Op, ExprAST* LHS, ExprAST* RHS):
   Op(Op), LHS(LHS), RHS(RHS) { top = false; };
  
 void BinaryExprAST::visit() {
-  std::cout << "(" << Op << " ";
+  std::cout << "( " << Op << " ";
   LHS->visit();
   if (RHS!=nullptr) RHS->visit();
-  std::cout << ")";
+  std::cout << " )";
 };
 
 Value *BinaryExprAST::codegen(driver& drv) {
@@ -141,6 +152,24 @@ Value *BinaryExprAST::codegen(driver& drv) {
       return drv.builder->CreateFMul(L,R,"mulregister");
     case '/':
       return drv.builder->CreateFDiv(L,R,"addregister");
+    
+    /***** Estensione 1 *****/
+    case 'E':
+      return drv.builder->CreateFCmpOEQ(L,R,"eqregister");
+    case 'N': 
+      return drv.builder->CreateFCmpONE(L,R,"neregister");
+    case '>': 
+      return drv.builder->CreateFCmpOGT(L,R,"gtregister");
+    case '<': 
+      return drv.builder->CreateFCmpOLT(L,R,"ltregister");
+    case 'g': 
+      return drv.builder->CreateFCmpOGE(L,R,"geregister");
+    case 'l': 
+      return drv.builder->CreateFCmpOLE(L,R,"leregister");
+
+    case ':':
+      return R;
+
     default:  
       return LogErrorV("Operatore binario non supportato");
     }
@@ -273,3 +302,232 @@ Function *FunctionAST::codegen(driver& drv) {
   TheFunction->eraseFromParent();
   return nullptr;
 };
+
+
+/************************* Estensione 1 **************************/
+IfExprAST::IfExprAST(ExprAST* condizione, ExprAST* branchTrue, ExprAST* branchFalse) :
+  condizione(std::move(condizione)),
+  branchTrue(std::move(branchTrue)),
+  branchFalse(std::move(branchFalse))
+  {top = false;}
+
+void IfExprAST::visit() {
+  std::cout<<"( IF ";
+  condizione->visit();
+  std::cout<<" THEN ( ";
+  branchTrue->visit();
+  std::cout<<" ) ELSE ( ";
+  branchFalse->visit();
+  std::cout<<" ) ) ";
+};
+
+Value *IfExprAST::codegen(driver &drv) {
+  // verifico che non sia un istruzione di tipo top
+  if(gettop()) {
+    return TopExpression(this, drv);
+
+  } else {
+    Value *checkCond = condizione->codegen(drv);
+
+    if(!checkCond)
+      return nullptr;
+    
+    if(checkCond->getType()->isDoubleTy()) //controllo se è un double
+      checkCond = drv.builder->CreateFCmpONE(checkCond, ConstantFP::get(*drv.context, APFloat(0.0)), " IF COND DOUBLE ");
+    
+    Function *func = drv.builder->GetInsertBlock()->getParent();  // dove devo scrivere, prendo il blocco della funzione blocco entry
+
+    BasicBlock *ThenBB = BasicBlock::Create(*drv.context, "THEN", func);
+    BasicBlock *ElseBB = BasicBlock::Create(*drv.context, "ELSE");
+    BasicBlock *MergeBB = BasicBlock::Create(*drv.context, "MERGE");
+
+    drv.builder->CreateCondBr(checkCond, ThenBB, ElseBB);
+    drv.builder->SetInsertPoint(ThenBB);
+
+    Value *thenCode = branchTrue->codegen(drv);
+
+    if(!thenCode)
+      return nullptr;
+
+    drv.builder->CreateBr(MergeBB);
+
+    ThenBB = drv.builder->GetInsertBlock();   //serve per non sminchiare gli if innestati ovvero blocchi in più
+
+    func->getBasicBlockList().push_back(ElseBB);
+
+    drv.builder->SetInsertPoint(ElseBB);
+
+    Value *elseCode = branchFalse->codegen(drv);
+
+    if(!elseCode)
+      return nullptr;
+
+    drv.builder->CreateBr(MergeBB);
+
+    ElseBB = drv.builder->GetInsertBlock();
+
+    func->getBasicBlockList().push_back(MergeBB);
+
+    drv.builder->SetInsertPoint(MergeBB);
+
+    PHINode *phiInstr = drv.builder->CreatePHI(Type::getDoubleTy(*drv.context), 2, " PHI ");
+
+    phiInstr->addIncoming(thenCode, ThenBB);
+    phiInstr->addIncoming(elseCode, ElseBB);
+
+    return phiInstr;
+  }
+};
+
+
+/************************* Estensione 2 **************************/
+UnaryExprAST::UnaryExprAST(char operand, ExprAST *espressione) :
+  operand(std::move(operand)),
+  espressione(std::move(espressione))
+  {top = false;}
+
+void UnaryExprAST::visit() {
+  std::cout<<"( " << operand << " ";
+  espressione->visit();
+  std::cout<<" ) ";
+};
+
+
+Value *UnaryExprAST::codegen(driver &drv) {
+  // Verifico che non sia un istruzione di tipo top
+  if(gettop()) {
+    return TopExpression(this, drv);
+
+  } else {
+    Value *checkCond = espressione->codegen(drv);
+
+    if(!checkCond)
+      return nullptr;
+
+    switch (operand) {
+    case '+' :
+      return checkCond;
+      break;
+    
+    case '-' :
+      return drv.builder->CreateFSub(ConstantFP::get(Type::getDoubleTy(*drv.context), 0), checkCond, "negativeRegister");
+      break;
+
+    default:
+      return LogErrorV("Operatore binario non supportato");
+    }
+  }
+}
+
+/************************* Estensione 3,(adattamento per estensione 4) **************************/
+ForExprAST::ForExprAST(std::string id, ExprAST* init, ExprAST* exp, ExprAST* step, ExprAST* stmt) :
+  id(std::move(id)),
+  init(std::move(init)),
+  exp(std::move(exp)),
+  step(std::move(step)),
+  stmt(std::move(stmt))
+  {top = false;}
+
+void ForExprAST::visit() {
+  std::cout<<"( FOR" << id << " = ";
+  init->visit();
+  std::cout<<", ";
+  exp->visit();
+  std::cout<<" ";
+  step->visit();
+  std::cout<<" in ";
+  stmt->visit();
+  std::cout<<" ) ";
+};
+
+Value *ForExprAST::codegen(driver &drv) {
+  // Verifico che non sia un istruzione di tipo top
+  if(gettop()) {
+    return TopExpression(this, drv);
+
+  } else {
+    // Genero gli oggetti Alloca e TheFunction
+    Function *TheFunction = drv.builder->GetInsertBlock()->getParent();
+    AllocaInst *Alloca = CreateEntryBlockAlloca(drv, TheFunction, id);
+
+    // Codegen di StartVal, se uguale nullptr ritorno nullptr
+    Value *StartVal = init->codegen(drv);
+    if (!StartVal)
+      return nullptr;
+    
+    // Faccio la store
+    drv.builder->CreateStore(StartVal, Alloca);
+    // Genero i blocchi necessari per il ciclo FOR (Il tutorial effettuava un do-while, modificato per essere un FOR)
+    BasicBlock *PreheaderBB = drv.builder->GetInsertBlock();
+    // Basicblock creato per generare l'header, senza questo il for sarebbe un do-while fa lameno 1 iterazione senza controllare la condizione
+    BasicBlock *HeaderBB = BasicBlock::Create(*drv.context, "HEADER", TheFunction);
+    BasicBlock *LoopBB = BasicBlock::Create(*drv.context, "LOOP", TheFunction);
+    BasicBlock *AfterBB = BasicBlock::Create(*drv.context, "AFTERLOOP", TheFunction);
+    // Genero un salto al blocco dell'header
+    drv.builder->CreateBr(HeaderBB);
+    
+    // Imposto il punto di inserimento nel blocco Header per le prossime istruzioni
+    drv.builder->SetInsertPoint(HeaderBB);
+    // Creo il nodo PHI che restituirà valore 0 se non entrerà mai nel loop, se no restituirà il valore passato dal blocco LoopBB
+    PHINode *Variable = drv.builder->CreatePHI(Type::getDoubleTy(*drv.context), 2, "phi");
+    // Definisco nel nodo PHI di ritornare 0 se non sono mai entrato nel loop e quindi arrivo dal PreheaderBB
+    Variable->addIncoming(ConstantFP::get(*drv.context, APFloat(0.0)), PreheaderBB);
+    // Se si "shadowa" una variabile esistente, dobbiamo ripristinarla, quindi salvala ora.
+    AllocaInst *OldVal = llvm::cast<AllocaInst>(drv.NamedValues[id]);  // Salvo la variabile in OldVal
+    drv.NamedValues[id] = Alloca; // Sovrascrivo la tabella dei simboli
+
+    // Codegen della condizione di terminazione, solito controllo
+    Value *EndCond = exp->codegen(drv);
+    if (!EndCond)
+      return nullptr;
+
+    // Come per l'if controllo se è double e lo gestisco
+    if (EndCond->getType()->isDoubleTy())
+      EndCond = drv.builder->CreateFCmpONE(EndCond, ConstantFP::get(*drv.context, APFloat(0.0)), "loopcond");
+    // Genero una condizione di salto che dipende dalla codegen di End
+    drv.builder->CreateCondBr(EndCond, LoopBB, AfterBB);
+
+    // Definisco punto di inserimento delle istruzione nel blocco LoopBB
+    drv.builder->SetInsertPoint(LoopBB);
+    // codegen del corpo del ciclo.
+    Value *BodyValue = stmt->codegen(drv);
+    if (!BodyValue)
+      return nullptr;
+    // Il codegen del body potrebbe aver creato altri blocchi o alterato il blocco su cui stiamo lavorando
+    BasicBlock *bodyExitBB = drv.builder->GetInsertBlock();
+    // Codegen dello Step
+    Value *StepVal = nullptr;
+    if (step) {
+      StepVal = step->codegen(drv);
+      if (!StepVal)
+        return nullptr;
+    } else {
+      // Se non viene definito come da traccia inserisco 1
+      StepVal = ConstantFP::get(*drv.context, APFloat(1.0));
+    }
+    // Ora devo gestire l'operazione di step
+    // Carico tramite load il valore attuale dell'indice
+    Value *CurVar = drv.builder->CreateLoad(Alloca->getAllocatedType(), Alloca, "loadCurrentVar");
+    // Vi effettuo un operazione di somma con il valore dello Step
+    Value *NextVar = drv.builder->CreateFAdd(CurVar, StepVal, "nextVarCalcolated");
+    // Salvo il risultato tramite una store
+    drv.builder->CreateStore(NextVar, Alloca);
+    // Genero un salto per tornare all'header e verificare nuovamente la condizione
+    drv.builder->CreateBr(HeaderBB);
+    // Aggiunge una nuova voce al nodo PHI per il backedge.
+    Variable->addIncoming(BodyValue, bodyExitBB);
+
+    // Imposto come punto di inserimento il blocco AfterBB, così le prossime istruzioni vengono messe in tale blocco
+    drv.builder->SetInsertPoint(AfterBB);
+    // Ripristina la variabile unshadowed.
+    if (OldVal)
+      drv.NamedValues[id] = OldVal;
+    else
+      drv.NamedValues.erase(id);
+    // Ritorno il nodo PHI
+    return Variable;
+  }
+}
+
+
+

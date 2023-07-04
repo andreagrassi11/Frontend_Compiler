@@ -175,6 +175,47 @@ public:
   Function *codegen(driver& drv) override;
 };
 
-//void InitializeModule();
 
-#endif // ! DRIVER_HH
+// *********** Estensione 1 ***********
+/// IfExprAST - Classe che rappresenta l'espressione ifexpr
+class IfExprAST : public ExprAST {
+  private: 
+      ExprAST* condizione;
+      ExprAST* branchTrue;
+      ExprAST* branchFalse;
+
+  public:
+    IfExprAST(ExprAST* condizione, ExprAST* branchTrue, ExprAST* branchFalse);
+    void visit() override;
+    Value *codegen(driver& drv) override;
+};
+
+
+// *********** Estensione 2 ***********
+class UnaryExprAST : public ExprAST {
+  private:
+      char operand;
+      ExprAST* espressione;
+
+  public:
+    UnaryExprAST(char operand, ExprAST* espressione);
+    void visit() override;
+    Value *codegen(driver& drv) override;
+};
+
+// *********** Estensione 3 ***********
+class ForExprAST : public ExprAST {
+  private:
+    std::string id;
+    ExprAST* init;
+    ExprAST* exp;
+    ExprAST* step;
+    ExprAST* stmt;
+
+  public:
+    ForExprAST(std::string id, ExprAST* init, ExprAST* exp, ExprAST* step, ExprAST* stmt);
+    void visit() override;
+    Value *codegen(driver& drv) override;
+};
+
+#endif // !DRIVER_HH

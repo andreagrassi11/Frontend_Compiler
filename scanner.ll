@@ -54,6 +54,24 @@ blank   [ \t]
 ";"      return yy::parser::make_SEMICOLON (loc);
 ","      return yy::parser::make_COMMA     (loc);
 
+"=="     return yy::parser::make_EQ        (loc); 	// ********** Estensione 1 **********
+"!="     return yy::parser::make_NE        (loc);
+">"      return yy::parser::make_GT        (loc);
+"<"      return yy::parser::make_LT        (loc);
+">="     return yy::parser::make_GE        (loc);
+"<="     return yy::parser::make_LE        (loc);
+
+"if"     return yy::parser::make_IF        (loc);
+"then"   return yy::parser::make_THEN      (loc);
+"else"   return yy::parser::make_ELSE      (loc);
+"end"    return yy::parser::make_ENDTOK    (loc);
+
+":"      return yy::parser::make_COLON     (loc);   	// ********** Estensione 2 **********
+
+"for"    return yy::parser::make_FOR       (loc);     // ********** Estensione 3 **********
+"="      return yy::parser::make_ASSIGN    (loc);
+"in"     return yy::parser::make_IN        (loc);
+
 {num}      {
   errno = 0;
   double n = strtod(yytext, NULL);

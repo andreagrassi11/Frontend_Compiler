@@ -16,6 +16,10 @@
   class FunctionAST;
   class SeqAST;
   class PrototypeAST;
+
+  class IfExprAST;
+  class UnaryExprAST;
+  class ForExprAST;
 }
 
 // The parsing context.
@@ -32,17 +36,38 @@
 
 %define api.token.prefix {TOK_}
 %token
-  END  0  "end of file"
-  SEMICOLON  ";"
-  COMMA      ","
-  MINUS      "-"
-  PLUS       "+"
-  STAR       "*"
-  SLASH      "/"
-  LPAREN     "("
-  RPAREN     ")"
-  EXTERN     "extern"
-  DEF        "def"
+	END  0  "end of file"
+	SEMICOLON  ";"
+	COMMA      ","
+	MINUS      "-"
+	PLUS       "+"
+	STAR       "*"
+	SLASH      "/"
+	LPAREN     "("
+	RPAREN     ")"
+	EXTERN     "extern"
+	DEF        "def"
+
+	// ********** Estensione 1 **********
+	LT         "<"
+	GT         ">"
+	LE         "<="  
+	GE         ">=" 
+	EQ         "=="
+	NE         "!=" 
+
+	IF         "if" 
+	THEN       "then"
+	ELSE       "else"
+  ENDTOK     "end"
+  
+  // ********** Estensione 2 **********
+  COLON      ":"
+
+  // ********** Estensione 3 **********
+  FOR        "for"
+  ASSIGN     "="
+  IN         "in"
 ;
 
 %token <std::string> IDENTIFIER "id"
@@ -57,6 +82,16 @@
 %type <PrototypeAST*> external
 %type <PrototypeAST*> proto
 %type <std::vector<std::string>> idseq
+
+// ********** Estensione 1 **********
+%type <IfExprAST*> ifexpr
+
+// ********** Estensione 2 **********
+%type <UnaryExprAST*> unaryexpr
+
+// ********** Estensione 3 **********
+%type <ForExprAST*> forexpr
+%type <ExprAST*> step
 
 %%
 %start startsymb;
@@ -97,6 +132,24 @@ exp:
 | exp "-" exp          { $$ = new BinaryExprAST('-',$1,$3); }
 | exp "*" exp          { $$ = new BinaryExprAST('*',$1,$3); }
 | exp "/" exp          { $$ = new BinaryExprAST('/',$1,$3); }
+
+// ********** Estensione 1 **********
+| exp "<" exp          { $$ = new BinaryExprAST('<',$1,$3); }
+| exp ">" exp          { $$ = new BinaryExprAST('>',$1,$3); }
+| exp "<=" exp         { $$ = new BinaryExprAST('l',$1,$3); }
+| exp ">=" exp         { $$ = new BinaryExprAST('g',$1,$3); }
+| exp "==" exp         { $$ = new BinaryExprAST('E',$1,$3); }
+| exp "!=" exp         { $$ = new BinaryExprAST('N',$1,$3); }
+
+| ifexpr               { $$ = $1; }
+
+// ********** Estensione 2 **********
+| unaryexpr            { $$ = $1; }
+| exp ":" exp          { $$ = new BinaryExprAST(':', $1,$3); }
+
+// ********** Estensione 3 **********
+| forexpr              { $$ = $1; }
+
 | idexp                { $$ = $1; }
 | "(" exp ")"          { $$ = $2; }
 | "number"             { $$ = new NumberExprAST($1); };
@@ -118,6 +171,23 @@ explist:
 			 $$ = args;
                        }
 | exp "," explist      { $3.insert($3.begin(), $1); $$ = $3; };
+
+// ********** Estensione 1 **********
+ifexpr:
+  "if" exp "then" exp "else" exp "end" {$$ = new IfExprAST($2, $4, $6); };
+
+// ********** Estensione 2 **********
+unaryexpr:
+  "-" exp              { $$ = new UnaryExprAST('-', $2); }
+| "+" exp              { $$ = new UnaryExprAST('+', $2); };
+
+// ********** Estensione 3 **********
+forexpr:
+  "for" "id" "=" exp "," exp step "in" exp "end"         { $$ = new ForExprAST($2, $4, $6, $7, $9); };
+
+step:
+  %empty                   { $$ = nullptr; }
+| "," exp                  { $$ = $2; };
 
 %%
 
