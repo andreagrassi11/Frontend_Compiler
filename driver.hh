@@ -50,7 +50,7 @@ public:
   LLVMContext *context;
   Module *module;
   IRBuilder<> *builder;
-  std::map<std::string, Value *> NamedValues;
+  std::map<std::string, AllocaInst *> NamedValues;
   static inline int Cnt=0; //Contatore incrementale, per identificare registri SSA
   RootAST* root;      // A fine parsing "punta" alla radice dell'AST
   int parse (const std::string& f);
@@ -110,7 +110,7 @@ public:
 class VariableExprAST : public ExprAST {
 private:
   std::string Name;
-  
+
 public:
   VariableExprAST(std::string &Name);
   const std::string &getName() const;
@@ -177,7 +177,7 @@ public:
 
 
 // *********** Estensione 1 ***********
-/// IfExprAST - Classe che rappresenta l'espressione ifexpr
+// IfExprAST - Classe che rappresenta l'espressione ifexpr
 class IfExprAST : public ExprAST {
   private: 
       ExprAST* condizione;
@@ -216,6 +216,30 @@ class ForExprAST : public ExprAST {
     ForExprAST(std::string id, ExprAST* init, ExprAST* exp, ExprAST* step, ExprAST* stmt);
     void visit() override;
     Value *codegen(driver& drv) override;
+};
+
+// *********** Estensione 4 ***********
+class VarExprAST : public ExprAST {
+  private:
+    std::vector<std::pair<std::string, ExprAST*>> varNames;
+    ExprAST* exp;
+
+  public:
+    VarExprAST(std::vector<std::pair<std::string, ExprAST*>> varNames, ExprAST* exp);
+    void visit() override;
+    Value *codegen(driver& drv) override;
+};
+
+// *********** Estensione 5 ***********
+class WhileExprAST : public ExprAST {
+private:
+  ExprAST *end;
+  ExprAST *exp;
+
+public:
+  WhileExprAST(ExprAST *end, ExprAST *exp);
+  void visit() override;
+  Value *codegen(driver &drv) override;
 };
 
 #endif // !DRIVER_HH

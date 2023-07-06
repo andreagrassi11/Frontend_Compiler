@@ -6,7 +6,7 @@ kfe:    driver.o parser.o scanner.o kfe.o
 	clang++ -o kfe driver.o parser.o scanner.o kfe.o `llvm-config-14 --cxxflags --ldflags --libs --libfiles --system-libs`
 
 kfe.o:  kfe.cc driver.hh
-	clang++ -c kfe.cc -I/usr/lib/llvm-14/include -std=c++17 -fno-exceptions -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -L/usr/lib/llvm-14/lib -lLLVM-14
+	clang++ -c kfe.cc -I/usr/lib/llvm-14/include -std=c++17 -fno-exceptions -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS
 	
 parser.o: parser.cc
 	clang++ -c parser.cc -I/usr/lib/llvm-14/include -std=c++17 -fno-exceptions -D_GNU_SOURCE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS

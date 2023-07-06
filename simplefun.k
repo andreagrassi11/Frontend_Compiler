@@ -1,8 +1,7 @@
-def g(x y)
-    if x < y then
-        for i = 0, i != 15 in
-            2 + 2
+def g(x) 
+    var i = 0 in 
+        while i <= 2 in
+            i = i + 1 :
+            x = x + 5
         end
-    else
-        y : 5 - 4
     end;

@@ -72,6 +72,11 @@ blank   [ \t]
 "="      return yy::parser::make_ASSIGN    (loc);
 "in"     return yy::parser::make_IN        (loc);
 
+"var"    return yy::parser::make_VAR       (loc);     // ********** Estensione 4 **********
+
+"while"  return yy::parser::make_WHILE     (loc);     // ********** Estensione 5 **********
+
+
 {num}      {
   errno = 0;
   double n = strtod(yytext, NULL);

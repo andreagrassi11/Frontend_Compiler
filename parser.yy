@@ -20,6 +20,8 @@
   class IfExprAST;
   class UnaryExprAST;
   class ForExprAST;
+  class VarExprAST;
+  class WhileExprAST;
 }
 
 // The parsing context.
@@ -68,6 +70,12 @@
   FOR        "for"
   ASSIGN     "="
   IN         "in"
+
+  // ********** Estensione 4 **********
+  VAR        "var"
+
+  // ********** Estensione 5 **********
+  WHILE      "while"
 ;
 
 %token <std::string> IDENTIFIER "id"
@@ -92,6 +100,14 @@
 // ********** Estensione 3 **********
 %type <ForExprAST*> forexpr
 %type <ExprAST*> step
+
+// ********** Estensione 4 **********
+%type <VarExprAST*> varexpr
+%type <std::vector<std::pair<std::string, ExprAST*>>> varlist
+%type <std::pair<std::string, ExprAST*>> pair
+
+// ********** Estensione 5 **********
+%type <WhileExprAST*> whileexpr
 
 %%
 %start startsymb;
@@ -123,7 +139,9 @@ idseq:
                          $$ = args; }
 | "id" idseq           { $2.insert($2.begin(),$1); $$ = $2; };
 
-
+%left ":";
+%left "=";
+%left "==" "!=" "<" "<=" ">" ">=";
 %left "+" "-";
 %left "*" "/";
 
@@ -153,6 +171,13 @@ exp:
 | idexp                { $$ = $1; }
 | "(" exp ")"          { $$ = $2; }
 | "number"             { $$ = new NumberExprAST($1); };
+
+// ********** Estensione 4 **********
+| "id" "=" exp          { $$ = new BinaryExprAST('=',new VariableExprAST($1), $3); } 
+| varexpr              { $$ = $1; };
+
+// ********** Estensione 5 **********
+| whileexpr            { $$ = $1; }
 
 idexp:
   "id"                 { $$ = new VariableExprAST($1); }
@@ -188,6 +213,27 @@ forexpr:
 step:
   %empty                   { $$ = nullptr; }
 | "," exp                  { $$ = $2; };
+
+
+// ********** Estensione 4 **********
+varexpr:
+  "var" varlist "in" exp "end"     { $$ = new VarExprAST($2, $4); };
+
+varlist:
+  pair                              { std::vector<std::pair<std::string, ExprAST*>> args; // Gestisce il caso in cui c'è solo una coppia <variableName, id>
+                                      args.push_back($1);   // Aggiunge infondo al vettore "args" $1
+			                                $$ = args;     // Valore di ritorno in $$
+                                    }
+| pair "," varlist                  { $3.insert($3.begin(), $1); $$ = $3; };    // Effettua un "append" di $1 all'inizio del vettore $3
+
+pair:           
+  "id"                              { $$ = std::make_pair($1,nullptr); }    // Gestisco il caso "var a"
+| "id" "=" exp                      { $$ = std::make_pair($1,$3); }         // Gestisco il caso "var a = 1"
+
+
+// ********** Estensione 5 **********
+whileexpr:
+  "while" exp "in" exp "end"  {$$ = new WhileExprAST($2, $4); };
 
 %%
 
