@@ -8,7 +8,7 @@ Value *LogErrorV(const std::string Str) {
   return nullptr;
 }
 
-// *********** Estensione 4 ***********
+// *********** Estensione 3 ***********
 // Funzione per gestire le allocazioni, crea un blocco apposito per esse
 // CreateEntryBlockAlloca - Crea un'istruzione "alloca" nel blocco di ingresso della funzione.
 // Questo è usato per variabili mutabili, iteratori nei for, ecc...
@@ -152,12 +152,12 @@ Value *BinaryExprAST::codegen(driver& drv) {
 
     // *********** Estensione 4 ***********
     if(Op == '=') {
-      // Richediamo che LHS sia un identificatore/variabile
+      // Richiediamo che LHS sia un identificatore/variabile
       VariableExprAST *LHSE = static_cast<VariableExprAST *>(LHS);
       if (!LHSE)
         return LogErrorV("destination of '=' must be a variable");
 
-      // Solito gioco della codegen con RHS
+      // Richiamo la codegen di RHS
       Value *Val = RHS->codegen(drv);
       if (!Val)
         return nullptr;
@@ -321,7 +321,8 @@ Function *FunctionAST::codegen(driver& drv) {
   // Registra gli argomenti nella symbol table
   drv.NamedValues.clear();
 
-  // ESTENSIONE 4 -> Modifico questo codegen perchè per ogni argomento, creiamo un'alloca, memorizziamo il valore di input della funzione nell'alloca e registriamo l'alloca come posizione di memoria per l'argomento.
+  // Modifico questo codegen perchè per ogni argomento, creiamo un'alloca, memorizziamo il
+  // valore di input della funzione nell'alloca e registriamo l'alloca come posizione di memoria per l'argomento.
   for (auto &Arg : TheFunction->args()) {
     // Creo un alloca per quella variabile
     AllocaInst *Alloca = CreateEntryBlockAlloca(drv, TheFunction, std::string(Arg.getName()));
@@ -387,7 +388,7 @@ Value *IfExprAST::codegen(driver &drv) {
     if(!checkCond)
       return nullptr;
     
-    if(checkCond->getType()->isDoubleTy()) //controllo se è un double
+    if(checkCond->getType()->isDoubleTy()) //controllo se la costante dell'espressione è un double
       checkCond = drv.builder->CreateFCmpONE(checkCond, ConstantFP::get(*drv.context, APFloat(0.0)), " IF COND DOUBLE ");
     
     Function *func = drv.builder->GetInsertBlock()->getParent();  // dove devo scrivere, prendo il blocco della funzione blocco entry
@@ -406,8 +407,10 @@ Value *IfExprAST::codegen(driver &drv) {
 
     drv.builder->CreateBr(MergeBB);
 
-    ThenBB = drv.builder->GetInsertBlock();   //serve per non sminchiare gli if innestati ovvero blocchi in più
+    // Mantengo un puntatore all'inizio del BasicBlock, utile per il PHI
+    ThenBB = drv.builder->GetInsertBlock();
 
+    // Aggiungo in fondo alla lista di Basic Block il blocco ElseBB
     func->getBasicBlockList().push_back(ElseBB);
 
     drv.builder->SetInsertPoint(ElseBB);
@@ -421,11 +424,12 @@ Value *IfExprAST::codegen(driver &drv) {
 
     ElseBB = drv.builder->GetInsertBlock();
 
+    // Aggiungo in fondo alla lista di Basic Block il blocco MergeBB
     func->getBasicBlockList().push_back(MergeBB);
 
     drv.builder->SetInsertPoint(MergeBB);
 
-    PHINode *phiInstr = drv.builder->CreatePHI(Type::getDoubleTy(*drv.context), 2, " PHI ");
+    PHINode *phiInstr = drv.builder->CreatePHI(Type::getDoubleTy(*drv.context), 2, "phi");
 
     phiInstr->addIncoming(thenCode, ThenBB);
     phiInstr->addIncoming(elseCode, ElseBB);
@@ -460,16 +464,16 @@ Value *UnaryExprAST::codegen(driver &drv) {
       return nullptr;
 
     switch (operand) {
-    case '+' :
-      return checkCond;
-      break;
-    
-    case '-' :
-      return drv.builder->CreateFSub(ConstantFP::get(Type::getDoubleTy(*drv.context), 0), checkCond, "negativeRegister");
-      break;
+      case '+' :
+        return checkCond;
+        break;
+      
+      case '-' :
+        return drv.builder->CreateFSub(ConstantFP::get(Type::getDoubleTy(*drv.context), 0), checkCond, "negativeRegister");
+        break;
 
-    default:
-      return LogErrorV("Operatore binario non supportato");
+      default:
+        return LogErrorV("Operatore binario non supportato");
     }
   }
 }
@@ -505,7 +509,10 @@ Value *ForExprAST::codegen(driver &drv) {
 
   } else {
     // Genero gli oggetti "alloca" e "TheFunction"
+    // Ritorna il puntatore al BB padre 
     Function *TheFunction = drv.builder->GetInsertBlock()->getParent();
+
+    //Alloca nell' entry BB le varibili che utilizziamo
     AllocaInst *Alloca = CreateEntryBlockAlloca(drv, TheFunction, id);
 
     // Codegen di StartVal, se uguale nullptr ritorno nullptr
@@ -549,7 +556,7 @@ Value *ForExprAST::codegen(driver &drv) {
     if (!EndCond)
       return nullptr;
 
-    // Come per l'if controllo se è double e lo gestisco
+    // Converto il valore inserito in tipo float
     if (EndCond->getType()->isDoubleTy())
       EndCond = drv.builder->CreateFCmpONE(EndCond, ConstantFP::get(*drv.context, APFloat(0.0)), "loopcond");
       
@@ -563,9 +570,6 @@ Value *ForExprAST::codegen(driver &drv) {
     Value *BodyValue = stmt->codegen(drv);
     if (!BodyValue)
       return nullptr;
-
-    // Il codegen del body potrebbe aver creato altri blocchi o alterato il blocco su cui stiamo lavorando
-    BasicBlock *bodyExitBB = drv.builder->GetInsertBlock();
 
     // Codegen dello Step
     Value *StepVal = nullptr;
@@ -592,6 +596,9 @@ Value *ForExprAST::codegen(driver &drv) {
 
     // Genero un salto per tornare all'header e verificare nuovamente la condizione
     drv.builder->CreateBr(HeaderBB);
+
+    // Il codegen del body potrebbe aver creato altri blocchi o alterato il blocco su cui stiamo lavorando
+    BasicBlock *bodyExitBB = drv.builder->GetInsertBlock();
 
     // Aggiunge una nuova voce al nodo PHI per il backedge.
     Variable->addIncoming(BodyValue, bodyExitBB);
@@ -710,10 +717,11 @@ Value *WhileExprAST::codegen(driver& drv) {
 
     // Crea i nuovi BB per la gestione del while
     BasicBlock *PreheaderBB = drv.builder->GetInsertBlock();
-    BasicBlock *WhileBB = BasicBlock::Create(*drv.context, "loop", TheFunction);
-    BasicBlock *HeaderBB = BasicBlock::Create(*drv.context, "header", TheFunction); // Basicblock creato per generare l'header, senza questo il for sarebbe un do-while fa lameno 1 iterazione senza controllare la condizione
-    BasicBlock *AfterBB = BasicBlock::Create(*drv.context, "afterloop", TheFunction);
-    // Inserisco un istruzione di salto all'header del while
+    BasicBlock *WhileBB = BasicBlock::Create(*drv.context, "WHILE", TheFunction);
+    BasicBlock *HeaderBB = BasicBlock::Create(*drv.context, "HEADERWHILE", TheFunction); // Basicblock creato per generare l'header, senza questo il for sarebbe un do-while fa lameno 1 iterazione senza controllare la condizione
+    BasicBlock *AfterBB = BasicBlock::Create(*drv.context, "AFTERWHILE", TheFunction);
+
+    // Inserisco un istruzione di salto da dove mi trovo all'header del while
     drv.builder->CreateBr(HeaderBB);
 
     // Inizia l'inserimento nel Basic Block
